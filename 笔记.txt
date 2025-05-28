@@ -1,0 +1,5 @@
+uboot移植：
+1.开发板头文件（nclude/configs/mx6ullevk.h）
+2.板级文件夹(mx6ullevk 的文件夹)
+3.图形界面（arch/arm/cpu/armv7/mx6/Kconfig）
+4.驱动修改（mx6ullevk.c）
