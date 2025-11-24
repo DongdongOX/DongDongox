@@ -445,21 +445,22 @@ vlan destory vlan-table vid 10
 
 port type (transparent|hybrid):
 
-//配置vlan tag or untag 的 member port(port vlan 10 tagged | untagged):
-vlan set vlan-table vid 10 member 1
-vlan set vlan-table vid 10 untag-port 1 
-vlan set vlan-conversion egress entry 0 key inner tag-status (tagged/untagged)
-vlan set vlan-conversion egress entry 0 state enable
-vlan set vlan-conversion egress entry 0 key inner vid 10  state enable
-vlan set vlan-conversion egress entry 0 key port 1 state enable
-
+//配置vlan tag or untag 的 member port(port vlan 555 tagged | untagged):
+vlan set vlan-table vid 555 member 0
+vlan set vlan-table vid 555 untag-port 0 
+vlan set vlan-conversion egress entry 511 key inner tag-status (tagged/untagged)
+vlan set vlan-conversion egress entry 511 state enable
+vlan set vlan-conversion egress entry 511 key inner vid 1 state enable
+vlan set vlan-conversion egress entry 511 key port 0 state enable
+    
 //配置端口默认vlan（port pvid 10）:
-vlan set pvid inner port 1 10 
-vlan set pvid outer port 1 10
-vlan set vlan-conversion egress entry 0 key inner tag-status (tagged/untagged)
-vlan set vlan-conversion egress entry 0 state enable
-vlan set vlan-conversion egress entry 0 key inner vid 10 state enable
-vlan set vlan-conversion egress entry 0 key port 1 state enable
+vlan set pvid inner port 0 555 
+vlan set pvid outer port 0 555
+vlan set vlan-conversion egress entry 512 key inner tag-status (tagged/untagged)
+vlan set vlan-conversion egress entry 512 state enable
+vlan set vlan-conversion egress entry 512 key inner vid 555 state enable
+vlan set vlan-conversion egress entry 512 key port 0 state enable    
+ //只设置pvid或pvid和port vlan的vlan值不同时，evc的key配置为该端口下接收vlan为pvid的包，action为不对vlan做任何处理；当pvid和port vlan的vlan值相同时，evc的key配置为该端口下接收vlan为pvid的包，但是action为port vlan配置中包的模式（tag/untag）
 
 //vlan转换(port modified-vlan 200 2000 7)：
 vlan set vlan-conversion ingress entry 0 key port 0 state enable
@@ -516,11 +517,11 @@ vlan set vlan-conversion ingress entry 0 key outer priority <UINT:priority> stat
 vlan set vlan-conversion ingress entry 0 key port <UINT:port> state disable
 ```
 
-
-
-
-
 ## L2
+
+
+
+
 
 
 
@@ -528,11 +529,25 @@ vlan set vlan-conversion ingress entry 0 key port <UINT:port> state disable
 
 
 
+
+
+
+
 ## ACL
 
 
 
+
+
+
+
+
+
 ## Qos
+
+
+
+
 
 
 
