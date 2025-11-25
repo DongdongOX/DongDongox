@@ -142,7 +142,7 @@
 	"fdt_addr=0x83000000\0" \
 	"boot_fdt=try\0" \
 	"ip_dyn=yes\0" \
-	"panel=TFT43AB\0" \
+	"panel=ATK-LCD-7-1024x600\0" \
 	"splashimage=0x88000000\0" \
 	"splashpos=m,m\0" \
 	"logo_file=alientek.bmp\0" \
