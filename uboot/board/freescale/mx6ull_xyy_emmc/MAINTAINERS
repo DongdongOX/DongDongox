@@ -1,7 +1,0 @@
-MX6ULL_XYY_EMMC BOARD
-M:	Peng Fan <peng.fan@nxp.com>
-S:	Maintained
-F:	board/freescale/mx6ull_xyy_emmc/
-F:	include/configs/mx6ull_xyy_emmc.h
-
-

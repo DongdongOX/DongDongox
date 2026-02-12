@@ -162,3 +162,7 @@ Git 的核心功能，用于并行开发、隔离功能。
 查看本地分支：git branch
 
 查看远程分支：git branch -r
+
+
+
+配置ssh：ssh-keygen -t rsa -C "your_email@example.com"    cat ~/.ssh/id_rsa.pub
