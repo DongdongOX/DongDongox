@@ -4,7 +4,7 @@ How to use U-Boot on Freescale MX6ULL 14x14 EVK
 - Build U-Boot for MX6ULL 14x14 EVK:
 
 $ make mrproper
-$ make mx6ull_14x14_evk_defconfig
+$ make mx6ull_xyy_emmc_defconfig
 $ make
 
 This will generate the u-boot image u-boot.imx.
