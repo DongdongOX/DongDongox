@@ -901,6 +901,29 @@ struct display_info_t const displays[] = {
 		.vmode          = FB_VMODE_NONINTERLACED
                }
        },
+
+       {
+	.bus = MX6UL_LCDIF1_BASE_ADDR,
+	.addr = 0,
+	.pixfmt = 24,
+	.detect = NULL,
+	.enable = do_enable_parallel_lcd,
+	.mode   = {
+		.name           = "TFT7016",
+		.xres           = 1024,
+		.yres           = 600,
+		.pixclock       = 19531,
+		.left_margin    = 140,
+		.right_margin   = 160,
+		.upper_margin   = 20,
+		.lower_margin   = 12,
+		.hsync_len      = 20,
+		.vsync_len      = 3,
+		.sync           = 0,
+		.vmode          = FB_VMODE_NONINTERLACED
+               }
+       },
+	   
       /* VGA display default is disabled.
        * ALPHA or MINI board HDMI display does not support in uboot
        */
@@ -1146,9 +1169,9 @@ int board_init(void)
 
 	imx_iomux_v3_setup_multiple_pads(leds_pads, ARRAY_SIZE(leds_pads));
 
-	imx_iomux_v3_setup_multiple_pads(iox_pads, ARRAY_SIZE(iox_pads));
+	//imx_iomux_v3_setup_multiple_pads(iox_pads, ARRAY_SIZE(iox_pads));
 
-	iox74lv_init();
+	//iox74lv_init();
 
 #ifdef CONFIG_SYS_I2C_MXC
 	setup_i2c(0, CONFIG_SYS_I2C_SPEED, 0x7f, &i2c_pad_info1);
@@ -1214,7 +1237,7 @@ int checkboard(void)
 	if (is_mx6ull_9x9_evk())
 		puts("Board: MX6ULL 9x9 EVK\n");
 	else
-		puts("Board: I.MX6U ALPHA|MINI\n");
+		puts("Board: IMX6ULL XYY EMMC\n");
 
 	return 0;
 }

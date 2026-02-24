@@ -113,7 +113,7 @@
 #if defined(CONFIG_SYS_USE_NAND) && !defined(CONFIG_SYS_BOOT_SD)
 #define CONFIG_EXTRA_ENV_SETTINGS \
 	CONFIG_MFG_ENV_SETTINGS \
-	"panel=TFT43AB\0" \
+	"panel=TFT7016\0" \
 	"fdt_addr=0x83000000\0" \
 	"fdt_high=0xffffffff\0"	  \
 	"console=ttymxc0\0" \
@@ -142,7 +142,7 @@
 	"fdt_addr=0x83000000\0" \
 	"boot_fdt=try\0" \
 	"ip_dyn=yes\0" \
-	"panel=TFT43AB\0" \
+	"panel=TFT7016\0" \
 	"splashimage=0x88000000\0" \
 	"splashpos=m,m\0" \
 	"logo_file=alientek.bmp\0" \

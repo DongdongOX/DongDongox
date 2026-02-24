@@ -205,7 +205,7 @@ config TARGET_MX6ULL_9X9_EVK
 	select DM_THERMAL
 
 config TARGET_MX6ULL_XYY_EMMC
-	bool "Support mx6ull_xyy_EMMC"
+	bool "Support mx6ull_xyy_emmc"
 	select MX6ULL
 	select DM
 	select DM_THERMAL
