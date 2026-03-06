@@ -33,6 +33,11 @@ kobject_set_name 	//对上个函数的封装, 用于设置 kobject 的 name
 kobject_rename 		//修改 kobject 的名字
 kobject_get 		//调用 kref_get(&kobj->kref), 来增加 kobject 的引用计数
 kobject_put 		//调用 kref_put(&kobj->kref, kobject_release)来减少 kobject 的引用计数
+    
+    
+kobject_init_and_add
+    ->kobject_init(kobj, ktype);
+    ->kobject_add_varg(kobj, parent, fmt, args);
 ```
 
 #### kset
@@ -59,8 +64,18 @@ struct kset_uevent_ops {
 //相关api
 extern void kset_init(struct kset *kset);	//
 extern int __must_check kset_register(struct kset*kset);	//先调用 kset_init,然后调用 kobject_add_internal 将其 kobject 添加到kernel,然后发送一个 KOBJ_ADD uevent 事件
+struct kset *kset_create_and_add(const char *name,
+                                 const struct kset_uevent_ops *uevent_ops,
+                                 struct kobject *parent);
+
 extern void kset_unregister(struct kset *kset)		//
-extern struct kset * __must_check kset_create_and_add(const char *name, const struct kset_uevent_ops *u, struct kobject *parent_kobj)
+extern struct kset * __must_check kset_create_and_add(const char *name, const struct kset_uevent_ops *u, struct kobject *parent_kobj)；
+    
+    
+kset_create_and_add
+    ->kset_create(name, uevent_ops, parent_kobj);
+    ->kset_register(kset)
+        ->kset_init(k);
 ```
 
 
@@ -115,419 +130,150 @@ sysfs_create_groups(struct kobject *kobj, const struct attribute_group **groups)
 sysfs_remove_groups(struct kobject *kobj,const struct attribute_group **groups);	//删除多个属性组
 ```
 
-#### 代码：内核模块手动加载到内核
-
-```c
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/kobject.h>
-#include <linux/slab.h>		/*kzalloc, kmalloc*/
-#include <linux/sysfs.h>	/*optional: has been included in kobject.h */
-
-/* 
- * Another special macro (MODULE_LICENSE) is used to tell the kernel that this 
- * module bears a free license; without such a declaration, the kernel 
- * complains when the module is loaded.
- */
-MODULE_LICENSE("Dual BSD/GPL");
-
-static struct kobject *example_kobj;
-
-static int kobj_attr_value = 0;
-
-/*the attribute for the kobject*/
-static struct attribute kobj_attr = {
-	.name = "kobj_attr",
-	.mode = VERIFY_OCTAL_PERMISSIONS(0664),
-};
-
-static void ktype_release(struct kobject *kobj)
-{
-	printk(KERN_ALERT "release kobject (%p)\n", kobj);
-	kfree(kobj);
-}
-
-static ssize_t kobject_attr_show(struct kobject *kobj, struct attribute *attr,
-			      char *buf)
-{
-	ssize_t ret = -EIO;
-	
-	ret = sprintf(buf, "%d\n", kobj_attr_value);
-	
-	return ret;
-}
-
-static ssize_t kobject_attr_store(struct kobject *kobj, struct attribute *attr,
-			       const char *buf, size_t count)
-{
-	ssize_t ret = -EIO;
-	
-	sscanf(buf, "%du", &kobj_attr_value);
-	
-	printk(KERN_ALERT "attribute value from user %s\n", buf);
-
-	ret = count;
-	
-	return ret;
-}
-
-const struct sysfs_ops kobject_sysfs_ops = {
-	.show	= kobject_attr_show,
-	.store	= kobject_attr_store,
-};
-
-/*your own ktype for the kobject*/
-static struct kobj_type ktype = {
-	.release = ktype_release,
-	.sysfs_ops = &kobject_sysfs_ops,
-};
-
-static int __init example_init(void)
-{
-	int retval;
-	
-	/*first: allocate a kobject memory*/
-	example_kobj = kzalloc(sizeof(*example_kobj), GFP_KERNEL);
-	if (!example_kobj)
-		return -ENOMEM;
-	
-	/*second: define your own ktype, and init the kobject*/
-	kobject_init(example_kobj, &ktype);
-	
-	/*third: add the kobject to kernel*/
-	retval = kobject_add(example_kobj, NULL, "%s", "example_kobj");
-	if (retval) {
-		printk(KERN_WARNING "%s: kobject_add error: %d\n",
-		       __func__, retval);
-		goto kobject_add_error;
-	}
-	
-	/*forth: create the attribute file associated with this kobject */
-	retval = sysfs_create_file(example_kobj, &kobj_attr);
-	if (retval) {
-		printk(KERN_WARNING "%s: sysfs_create_file error: %d\n",
-		       __func__, retval);
-		goto create_attribute_error;
-	}
-	
-	return 0;
-
-kobject_add_error:
-create_attribute_error:
-	kobject_put(example_kobj);
-	example_kobj = NULL;
-	return retval;
-}
-
-static void example_exit(void)
-{
-	kobject_put(example_kobj);
-	example_kobj = NULL;
-}
-
-module_init(example_init);
-module_exit(example_exit);
-
-MODULE_AUTHOR("John LiuXin");
-MODULE_DESCRIPTION("Example of manual create kobject and attribute");
-```
-
-#### 代码：内核模块自动加载到内核
-
-```c
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/kobject.h>
-#include <linux/slab.h>		/*kzalloc, kmalloc*/
-#include <linux/sysfs.h>	/*optional: has been included in kobject.h */
-
-/* 
- * Another special macro (MODULE_LICENSE) is used to tell the kernel that this 
- * module bears a free license; without such a declaration, the kernel 
- * complains when the module is loaded.
- */
-MODULE_LICENSE("Dual BSD/GPL");
-
-static struct kobject *example_kobj;
-
-static int kobj_attr_value = 0;
-
-static ssize_t kobject_attr_show(struct kobject *kobj, struct kobj_attribute *attr,
-			      char *buf)
-{
-	ssize_t ret = -EIO;
-	
-	ret = sprintf(buf, "%d\n", kobj_attr_value);
-	
-	return ret;
-}
-
-static ssize_t kobject_attr_store(struct kobject *kobj, struct kobj_attribute *attr,
-			       const char *buf, size_t count)
-{
-	ssize_t ret = -EIO;
-	
-	sscanf(buf, "%du", &kobj_attr_value);
-	
-	printk(KERN_ALERT "attribute value from user %s\n", buf);
-
-	ret = count;
-	
-	return ret;
-}
-
-/*the attribute for the kobject*/
-static struct kobj_attribute kobj_attr =
-	__ATTR(kobj_attr, 0664, kobject_attr_show, kobject_attr_store);
-
-static int __init example_init(void)
-{
-	int retval;
-	
-	/*first: create a kobject and add it to kernel*/
-	example_kobj = kobject_create_and_add("example_kobj", NULL);
-	if (!example_kobj)
-		return -ENOMEM;
-	
-	/*second: create the attribute file associated with this kobject */
-	retval = sysfs_create_file(example_kobj, &kobj_attr.attr);
-	if (retval) {
-		printk(KERN_WARNING "%s: sysfs_create_file error: %d\n",
-		       __func__, retval);
-		goto create_attribute_error;
-	}
-	
-	return 0;
-
-create_attribute_error:
-	kobject_put(example_kobj);
-	example_kobj = NULL;
-	return retval;
-}
-
-static void example_exit(void)
-{
-	kobject_put(example_kobj);
-	example_kobj = NULL;
-}
-
-module_init(example_init);
-module_exit(example_exit);
-
-MODULE_AUTHOR("John LiuXin");
-MODULE_DESCRIPTION("Example of auto create kobject and attribute");
-```
-
 #### 代码：在/sys/下建 1 个父目录, 该父目录下会有 1 个属性文件, 1 个子目录, 子目录下会有 1 个属性文件. 可以读写这 2 个属性文件  
 
 ```c
-#include <linux/init.h>
+#include <linux/async.h>
+#include <linux/device.h>
 #include <linux/module.h>
-#include <linux/kobject.h>
-#include <linux/slab.h>		/*kzalloc, kmalloc*/
-#include <linux/sysfs.h>	/*optional: has been included in kobject.h */
+#include <linux/errno.h>
+#include <linux/slab.h>
+#include <linux/init.h>
+#include <linux/string.h>
+#include <linux/mutex.h>
+#include <linux/kobject.h> 
+#include <linux/sysfs.h>
+#include <linux/printk.h> 
+#include "base.h"
+#include "power/power.h"
 
-/* 
- * Another special macro (MODULE_LICENSE) is used to tell the kernel that this 
- * module bears a free license; without such a declaration, the kernel 
- * complains when the module is loaded.
- */
-MODULE_LICENSE("Dual BSD/GPL");
+//创建了/sys/ktemp/ktemp_kset_attr,/sys/ktemp/ktemp_kobj/ktemp_attr
 
-static struct kset    *example_kset;
-static struct kobject *example_kobj;
+static struct kset *ktemp_set;
+static struct kobject *ktemp_kobj;
 
-static int kset_attr_value = 0;
-static int kobj_attr_value = 0;
 
+static int ktemp_int = 0;
+static int ktemp_kset_int =0;
+
+//manual kobject attribute 
+static struct attribute ktemp_attr = {
+    .name = "ktemp_attr",
+    .mode = VERIFY_OCTAL_PERMISSIONS(0664),
+};
+
+static struct attribute ktemp_kset_attr = {
+    .name = "ktemp_kset_attr",
+    .mode = VERIFY_OCTAL_PERMISSIONS(0664),
+};
 /*
- * functions for kset
- */
+manual kobject attribute 
+static struct kobj_attribute kobj_attr = __ATTR(kobj_attr, 0664, sysfs_ops_show, sysfs_ops_store);
+*/
 
-/*the attribute for the kset*/
-static struct attribute kset_attr = {
-	.name = "kset_attr",
-	.mode = VERIFY_OCTAL_PERMISSIONS(0664),
+static void ktemp_kset_release(struct kobject *kobj){
+    pr_info("ktemp kset release\r\n");
+}
+
+static void ktemp_release(struct kobject *kobj){
+    pr_info("ktemp release\r\n");
+}
+
+static ssize_t sysfs_ops_show(struct kobject *kobj,struct attribute *attr, char *buf){
+    ssize_t ret = -EIO;
+    ret = sprintf(buf, "%d", ktemp_int);
+    return ret;
+}
+
+static ssize_t sysfs_ops_store(struct kobject *kobj,struct attribute *attr, const char *buf, size_t count){
+    ssize_t ret = -EIO;
+    sscanf(buf, "%d", &ktemp_int);
+    ret = count;
+    return ret;
+}
+
+static ssize_t sysfs_kset_ops_show(struct kobject *kobj,struct attribute *attr, char *buf){
+    ssize_t ret = -EIO;
+    ret = sprintf(buf, "%d", ktemp_kset_int);
+    return ret;
+}
+
+static ssize_t sysfs_kset_ops_store(struct kobject *kobj,struct attribute *attr, const char *buf, size_t count){
+    ssize_t ret = -EIO;
+    sscanf(buf, "%d", &ktemp_kset_int);
+    ret = count;
+    return ret;
+}
+
+static const struct sysfs_ops ktemp_sysfs_ops = {
+    .show = sysfs_ops_show,
+    .store = sysfs_ops_store,
 };
 
-static void kset_self_release(struct kobject *kobj)
-{
-	struct kset *kset = container_of(kobj, struct kset, kobj);
-	printk(KERN_ALERT "release kset (%p)\n", kset);
-	kfree(kset);
-}
-
-static ssize_t kset_kobj_attr_show(struct kobject *kobj, struct attribute *attr,
-			      char *buf)
-{
-	ssize_t ret = -EIO;
-	
-	ret = sprintf(buf, "%d\n", kset_attr_value);
-	
-	return ret;
-}
-
-static ssize_t kset_kobj_attr_store(struct kobject *kobj, struct attribute *attr,
-			       const char *buf, size_t count)
-{
-	ssize_t ret = -EIO;
-	
-	sscanf(buf, "%du", &kset_attr_value);
-	
-	printk(KERN_ALERT "attribute value from user for kset %s\n", buf);
-
-	ret = count;
-	
-	return ret;
-}
-
-const struct sysfs_ops kset_kobj_sysfs_ops = {
-	.show	= kset_kobj_attr_show,
-	.store	= kset_kobj_attr_store,
+static const struct sysfs_ops ktemp_kset_sysfs_ops = {
+    .show = sysfs_kset_ops_show,
+    .store = sysfs_kset_ops_store,
 };
 
-/*your own ktype for the kset's kobject*/
-static struct kobj_type kset_self_ktype = {
-	.release = kset_self_release,
-	.sysfs_ops = &kset_kobj_sysfs_ops,
+static struct kobj_type ktemp_ktype = {
+    .release = ktemp_release,
+    .sysfs_ops = &ktemp_sysfs_ops,
 };
 
-/*
- * functions for kobject
- */
- 
-static ssize_t kobject_attr_show(struct kobject *kobj, struct kobj_attribute *attr,
-			      char *buf)
-{
-	ssize_t ret = -EIO;
-	
-	ret = sprintf(buf, "%d\n", kobj_attr_value);
-	
-	return ret;
-}
-
-static ssize_t kobject_attr_store(struct kobject *kobj, struct kobj_attribute *attr,
-			       const char *buf, size_t count)
-{
-	ssize_t ret = -EIO;
-	
-	sscanf(buf, "%du", &kobj_attr_value);
-	
-	printk(KERN_ALERT "attribute value from user for kobject %s\n", buf);
-
-	ret = count;
-	
-	return ret;
-}
-
-/*the attribute for the kobject*/
-static struct kobj_attribute kobj_attr =
-	__ATTR(kobj_attr, 0664, kobject_attr_show, kobject_attr_store);
-
-static void ktype_release(struct kobject *kobj)
-{
-	printk(KERN_ALERT "release kobject (%p)\n", kobj);
-	kfree(kobj);
-}
-
-/*your own ktype for the kobject*/
-static struct kobj_type kobject_ktype = {
-	.release	= ktype_release,
-	/*Note: 
-	 * Here we don't define the ops but use kobj_sysfs_ops which is defined in kobject.c
-	 * because we have done it in manual_kobject_attribute, don't want to do it again
-	 */
-	.sysfs_ops	= &kobj_sysfs_ops,
+static struct kobj_type ktemp_kset_ktype ={
+    .release = ktemp_kset_release,
+    .sysfs_ops = &ktemp_kset_sysfs_ops,
 };
 
-static int __init example_init(void)
-{
-	int retval;
-	
-	/*first: allocate a kset memory and prepare the kobj.ktype for this kset*/
-	example_kset = kzalloc(sizeof(*example_kset), GFP_KERNEL);
-	if(!example_kset)
+int __init ktemp_init(void){
+    int ret;
+    ktemp_set = kset_create_and_add("ktemp", NULL, NULL);
+    if (!ktemp_set){
 		return -ENOMEM;
-	retval = kobject_set_name(&example_kset->kobj, "%s", "example_kset");
-	if (retval) {
-		kfree(example_kset);
-		return retval;
-	}
-	example_kset->uevent_ops = NULL;
-	example_kset->kobj.parent = NULL;
-	example_kset->kobj.ktype = &kset_self_ktype;
-	example_kset->kobj.kset = NULL;
-	
-	/*second: register the kset*/
-	retval = kset_register(example_kset);
-	if (retval) {
-		kfree(example_kset);
-		return retval;
-	}
-	
-	/*third: create the attribute file associated with this kset*/
-	retval = sysfs_create_file(&example_kset->kobj, &kset_attr);
-	if (retval) {
-		printk(KERN_WARNING "%s: sysfs_create_file for kset error: %d\n",
-		       __func__, retval);
-		goto create_kset_attribute_error;
-	}
-	
-	/*4th: allocate a kobject memory*/
-	example_kobj = kzalloc(sizeof(*example_kobj), GFP_KERNEL);
-	if (!example_kobj) {
-		retval = -ENOMEM;
-		goto allocate_kobject_error;
-	}
-	
-	/*5th: define your own ktype, and init the kobject*/
-	kobject_init(example_kobj, &kobject_ktype);
-	
-	/*6th: set the kobject's kset*/
-	example_kobj->kset = example_kset;
-	
-	/*7th: add the kobject to kernel*/
-	retval = kobject_add(example_kobj, NULL, "%s", "example_kobj");
-	if (retval) {
-		printk(KERN_WARNING "%s: kobject_add error: %d\n",
-		       __func__, retval);
-		goto kobject_add_error;
-	}
-	
-	/*8th: create the attribute file associated with this kobject */
-	retval = sysfs_create_file(example_kobj, &kobj_attr.attr);
-	if (retval) {
-		printk(KERN_WARNING "%s: sysfs_create_file error: %d\n",
-		       __func__, retval);
-		goto create_attribute_error;
-	}
-	
-	return 0;
+    }
+    //kobject_put(&ktemp_set->kobj);
+    //kobject_init(&ktemp_set->kobj, &ktemp_kset_ktype);
+    ktemp_set->kobj.ktype = &ktemp_kset_ktype;
+    ret = sysfs_create_file(&ktemp_set->kobj, &ktemp_kset_attr);
+    if(ret){
+        pr_info("sysfs_create_file ktemp_kset_attr filed\r\n");
+        goto err_kset;
+    }
 
-create_attribute_error:
-kobject_add_error:
-	kobject_put(example_kobj);
-allocate_kobject_error:
-	example_kobj = NULL;
-create_kset_attribute_error:
-	kset_unregister(example_kset);
-	example_kset = NULL;
-	return retval;
+    ktemp_kobj = kzalloc(sizeof(struct kobject), GFP_KERNEL);
+    if(!ktemp_kobj){
+        pr_info("kzalloc ktemp_kobj failed\r\n");
+        goto err_kset;
+    }
+
+    ktemp_kobj->kset = ktemp_set;
+    ret = kobject_init_and_add(ktemp_kobj, &ktemp_ktype, &ktemp_set->kobj, "ktemp_kobj");
+    if(ret){
+        pr_info("kobject_init_and_add ktemp_ktype failed\r\n");
+        goto err_kobj;
+    }
+
+    ret = sysfs_create_file(ktemp_kobj, &ktemp_attr);
+    if(ret){
+        pr_info("sysfs_create_file ktemp_attr failed\r\n");
+        goto err_create_file;
+    }
+        
+    return 0;
+
+err_kobj:
+    kfree(ktemp_kobj);
+    ktemp_kobj = NULL;
+    return ret;
+err_kset:
+    kset_unregister(ktemp_set);
+    ktemp_set = NULL;
+    return ret;
+err_create_file:
+    kobject_put(ktemp_kobj);
+    return ret;
 }
 
-static void example_exit(void)
-{
-	kobject_put(example_kobj);
-	example_kobj = NULL;
-	kset_unregister(example_kset);
-	example_kset = NULL;
-}
-
-module_init(example_init);
-module_exit(example_exit);
-
-MODULE_AUTHOR("John LiuXin");
-MODULE_DESCRIPTION("Example of manual create kobject and attribute");
 ```
 
 #### uevent
@@ -632,166 +378,123 @@ struct subsys_private {
 ```c
 //注册,创建了/sys/bus/xxx,并且在xxx下创建了devices、drivers、drivers_autoprobe、drivers_probe、uevent
 bus_register(struct bus_type *bus);	
-bus_unregister(struct bus_type *bus);	//解注册
-bus_notifier_register(struct bus_type *bus, struct notifier_block *nb);		//注册总线事件通知器
-bus_notifier_unregister(struct bus_type *bus, struct notifier_block *nb);	//注销总线事件通知器
-bus_create_file(struct bus_type *bus, struct bus_attribute *attr);	//为总线创建 sysfs 属性文件
-bus_remove_file(struct bus_type *bus, struct bus_attribute *attr);	//删除总线的 sysfs 属性文件
-//将该 device 在 sysfs 中的目录, 链接到该 bus 的 devices 目录下
-bus_add_device(struct device *dev);		
-bus_add_driver(struct device_driver *drv);	//将驱动添加到总线的驱动链表（subsys_private->klist_drivers）
-int bus_probe_device(struct device *dev);
+bus_unregister(struct bus_type *bus);	
 ```
 
 ```c
-#include <linux/init.h>
+#include <linux/async.h>
+#include <linux/device.h>
 #include <linux/module.h>
-#include <linux/kobject.h>
-#include <linux/slab.h>		/*kzalloc, kmalloc*/
-#include <linux/sysfs.h>	/*optional: has been included in kobject.h */
-#include <linux/device.h>   /*bus, device, device_driver*/
+#include <linux/errno.h>
+#include <linux/slab.h>
+#include <linux/init.h>
+#include <linux/string.h>
+#include <linux/mutex.h>
+#include <linux/kobject.h> 
+#include <linux/sysfs.h>
+#include <linux/printk.h> 
+#include "base.h"
+#include "power/power.h"
 
-/* 
- * Another special macro (MODULE_LICENSE) is used to tell the kernel that this 
- * module bears a free license; without such a declaration, the kernel 
- * complains when the module is loaded.
- */
-MODULE_LICENSE("Dual BSD/GPL");
+static int bus_temp_value = 0;
 
-/*
- * Bus related code
- ******************************************************************************
- */
-static int bus_attr_value = 0;
-
-ssize_t bus_attr_store(struct bus_type *bus,
-			       const char *buf, size_t count)
-{
-	ssize_t ret = -EIO;
-	
-	sscanf(buf, "%du", &bus_attr_value);
-	
-	printk(KERN_ALERT "bus attribute value from user %s\n", buf);
-	
-	ret = count;
-	
-	return ret;
+static ssize_t bus_attr_show(struct bus_type *bus, char *buf){
+    ssize_t ret = -EIO;
+    ret = sprintf(buf, "%d\n", bus_temp_value);
+    return ret;
 }
 
-ssize_t bus_attr_show(struct bus_type *bus, char *buf)
-{
-	ssize_t ret = -EIO;
-	
-	ret = sprintf(buf, "%d\n", bus_attr_value);
-	
-	return ret;
+static ssize_t bus_attr_store(struct bus_type *bus, const char *buf, size_t count){
+    int ret = -EIO;
+    ret = sscanf(buf, "%d", &bus_temp_value);
+    ret = count;
+    return ret;
 }
 
-/*the attribute for the bus*/
-static BUS_ATTR(embus_attr, 0664, bus_attr_show, bus_attr_store);
+static BUS_ATTR(bus_attr, 0664, bus_attr_show, bus_attr_store);
 
 static struct attribute *attrs[] = {
-	&bus_attr_embus_attr.attr,
+	&bus_attr_bus_attr.attr,
 	NULL,
 };
 
-static struct attribute_group bus_attr_group = {
-	.attrs = attrs,
+
+
+static struct attribute_group bus_attr_group ={
+    .attrs = attrs,
 };
 
-const struct attribute_group *bus_attr_groups[] = {
-	&bus_attr_group,
-	NULL,
+static const struct attribute_group *bus_attr_groups[] = {
+    &bus_attr_group,
+    NULL,
 };
 
-struct bus_type embest_bus = {
-	.name = "embestBus",
-	.bus_groups = bus_attr_groups,
-	//we don't define a match function, so devices and drivers under this bus will
-	//always match.
-};
+static void temp_dev_release(struct bus_type *bus){
+    printk("temp_dev_release\r\n");
 
-/*
- * Device related code
- ******************************************************************************
- */
-static struct device embest_device = {
-	.init_name = "embestDev",
-	.bus = &embest_bus,
-	//no release function, when do device_unregister, kernel will give a WARNING
-	//but it don't affect
-};
-
- /*
- * Driver related code
- ******************************************************************************
- */
- 
-static int embest_device_driver_probe(struct device *dev)
-{
-	printk(KERN_ALERT "embest_device_driver_probe, device name %s \n", dev_name(dev));
-	
-	return 0;
 }
 
-static int embest_device_driver_remove(struct device *dev)
-{
-	printk(KERN_ALERT "embest_device_driver_remove, device name %s \n", dev_name(dev));
-	
-	return 0;
-}
-static struct device_driver embest_driver = {
-	.name = "embestDev",
-	.owner		= THIS_MODULE,
-	.bus  = &embest_bus,
-	.probe = embest_device_driver_probe,
-	.remove = embest_device_driver_remove,
+static struct bus_type temp_bus ={
+    .name = "temp_bus",
+    .bus_groups = bus_attr_groups,
 };
- 
-static int __init example_init(void)
-{
-	int error;
-	
-	error =  bus_register(&embest_bus);
-	if (error) {
-		printk(KERN_ALERT "embest bus register failed \n");
-		goto bus_register_fail;
-	}
-	
-	error = device_register(&embest_device);
-	if (error) {
-		printk(KERN_ALERT "embest device register failed \n");
-		goto device_register_fail;
-	}
-	
-	error = driver_register(&embest_driver);
-	if (error) {
-		printk(KERN_ALERT "embest driver register failed \n");
-		goto driver_register_fail;
-	}
 
-	return 0;
+static struct device temp_dev = {
+    .init_name = "temp_dev",
+    .bus = &temp_bus,
+    .release = temp_dev_release,
+};
 
-driver_register_fail:
-	device_unregister(&embest_device);
-device_register_fail:
-	bus_unregister(&embest_bus);
-bus_register_fail:
-	return error;
+static int driver_probe(struct device *dev){
+    
+    printk("driver_probe \r\n");
+    return 0;
+
 }
 
-static void example_exit(void)
-{
-	driver_unregister(&embest_driver);
-	device_unregister(&embest_device);
-	bus_unregister(&embest_bus);
+static int driver_remove(struct device *dev){
+    printk("driver_remove\r\n");
+    return 0;
 }
 
-module_init(example_init);
-module_exit(example_exit);
+static struct device_driver temp_driver = {
+    .name = "temp_dev",
+    .owner = THIS_MODULE,
+    .bus = &temp_bus,
+    .probe = driver_probe,
+    .remove = driver_remove,
+};
 
-MODULE_AUTHOR("John LiuXin");
-MODULE_DESCRIPTION("Example of bus, device, device_driver");
+int __init ktemp_bus_init(){
+
+    int ret = 0;
+    ret =bus_register(&temp_bus);
+    if(ret){
+        printk("bus_register failed\r\n");
+        goto err_bus_register;
+    }
+
+    ret = device_register(&temp_dev);
+    if(ret){
+        printk("device_register failed\r\n");
+        goto err_device_register;
+    }
+
+    ret = driver_register(&temp_driver);
+    if(ret){
+        printk("driver_register failed\r\n");
+        goto err_driver_register;
+    }
+
+    return ret;
+
+err_driver_register:
+    driver_unregister(&temp_driver);
+err_device_register:
+    device_unregister(&temp_dev);
+err_bus_register:
+    bus_unregister(&temp_bus);
+}
 ```
 
 ### CLASS
@@ -929,5 +632,73 @@ module_exit(example_exit);
 
 MODULE_AUTHOR("John LiuXin");
 MODULE_DESCRIPTION("Example of class, device");
+```
+
+### DEVICES
+
+```c
+struct device {
+    struct kobject kobj;              // 核心：继承kobject，实现sysfs、引用计数
+    const char *init_name;            // 设备初始化名称（如"ktemp_dev"）
+    struct device *parent;            // 父设备（构建设备树，如"ktemp_dev"属于"ktemp_set"）
+    struct bus_type *bus;             // 设备所属总线（如USB、PCI、platform）
+    struct device_driver *driver;     // 绑定的驱动（设备与驱动匹配后赋值）
+    void *platform_data;              // 自定义私有数据（存放设备专属参数）
+    dev_t devt;                       // 设备号（字符设备/块设备用，如主设备号+次设备号）
+    struct device_node *of_node;      // 设备树节点（ARM/嵌入式平台常用）
+    const struct attribute_group **groups; // 设备的sysfs属性组（批量暴露属性）
+    // 电源管理、回调函数、锁等其他成员...
+};
+
+struct device_private {
+    struct kobject kobj;          // 核心：与device->kobj关联的私有kobject
+    struct device *device;        // 反向指向所属的struct device（双向关联）
+    struct klist_node knode_parent; // 父设备链表节点（用于挂载到父设备的klist_children）
+    struct klist_node knode_driver;// 驱动匹配链表节点（挂载到驱动的klist_devices）
+    struct klist_node knode_bus;   // 总线链表节点（挂载到总线的klist_devices）
+    struct list_head deferred_probe; // 延迟探测链表（设备驱动未加载时的临时挂载）
+    void *driver_data;            // 驱动核心私有数据（区别于device->driver_data）
+    struct device *parent;        // 缓存的父设备指针（优化访问效率）
+    // 引用计数、锁、电源管理等其他内部管理字段...
+};
+```
+
+```c
+//创建sys/devices/xxx,xxx文件中还有power、subsystem、uevent文件，如果在device中绑定了bus，会文件重定向sys/bus/busxxx/devices/xxx
+int device_register(struct device *dev);
+```
+
+### DRIVER
+
+```c
+struct driver {
+    const char        *name;          // 驱动名称（核心匹配依据）
+    struct bus_type   *bus;           // 驱动所属的总线（如platform_bus_type）
+    struct kobject     kobj;          // 驱动的kobject（内嵌，驱动的核心属性）
+    struct klist       klist_devices; // 与该驱动匹配的所有设备链表
+    struct klist_node  knode_bus;     // 挂载到总线上的驱动节点
+    struct module      *owner;        // 驱动所属模块（通常为THIS_MODULE）
+    const char        *mod_name;     // 驱动模块名（内部使用）
+
+    // 设备匹配回调：判断驱动是否支持某个设备
+    int (*probe) (struct device *dev);
+    // 设备移除回调：设备卸载时清理资源
+    int (*remove) (struct device *dev);
+    // 驱动注销回调：驱动卸载时执行
+    void (*shutdown) (struct device *dev);
+    // 电源管理相关回调
+    int (*suspend) (struct device *dev, pm_message_t state);
+    int (*resume) (struct device *dev);
+
+    // 驱动的属性组（sysfs中暴露的属性）
+    const struct attribute_group **groups;
+    // 驱动的私有数据（驱动自定义数据）
+    void *private;
+};
+```
+
+```c
+//会创建/sys/devices/xxx,xxx下面包含power、subsystem、 uevent
+int driver_register(struct driver*dr);
 ```
 
