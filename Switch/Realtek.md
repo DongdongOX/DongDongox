@@ -403,7 +403,9 @@ vlan set vlan-conversion egress entry 0 state enable
 
 N：1 VLAN Aggregation是指，来自 N：1 启用端口且拥有不同客户 VLAN 的所有上行流量都会被转换/聚合到同一 VLAN（这可以通过 IVC 表完成），然后对下游流量进行反向作（可以通过 EVC 表完成）。对于上游未标记的数据包，转发前插入默认 VLAN 标签;如果观察到默认 VLAN，则下游数据包会移除默认 VLAN 标签。
 
-### 设备代码流程
+## 设备代码流程
+
+### vlan
 
 ```c
 swVlanInit -> bsysLpcVlanInit
@@ -441,24 +443,26 @@ vlan get pvid inner port 0
 vlan create vlan-table vid 10
     
 //vlan删除:
-vlan destory vlan-table vid 10
-
+vlan destory vlan-table vid 10 //(还会把端口pvid为10的变为默认pvid 1,会把qinq转换中svid为10的那条qinq删掉)
+   
 port type (transparent|hybrid):
 
 //配置vlan tag or untag 的 member port(port vlan 555 tagged | untagged):
 vlan set vlan-table vid 555 member 0
 vlan set vlan-table vid 555 untag-port 0 
-vlan set vlan-conversion egress entry 511 key inner tag-status (tagged/untagged)
+//遍历所有的端口，当端口的pvid == tagged/untagged id
+vlan set vlan-conversion egress entry 511 key inner tag-status tagged
 vlan set vlan-conversion egress entry 511 state enable
 vlan set vlan-conversion egress entry 511 key inner vid 1 state enable
 vlan set vlan-conversion egress entry 511 key port 0 state enable
+vlan set vlan-conversion egress entry 511 data status inner untag | tag 
     
 //配置端口默认vlan（port pvid 10）:
 vlan set pvid inner port 0 555 
 vlan set pvid outer port 0 555
-vlan set vlan-conversion egress entry 512 key inner tag-status (tagged/untagged)
+vlan set vlan-conversion egress entry 512 key inner tag-status tagged
 vlan set vlan-conversion egress entry 512 state enable
-vlan set vlan-conversion egress entry 512 key inner vid 555 state enable
+vlan set vlan-conversion egress entry 512 key inner vid 555 state disable
 vlan set vlan-conversion egress entry 512 key port 0 state enable    
  //只设置pvid或pvid和port vlan的vlan值不同时，evc的key配置为该端口下接收vlan为pvid的包，action为不对vlan做任何处理；当pvid和port vlan的vlan值相同时，evc的key配置为该端口下接收vlan为pvid的包，但是action为port vlan配置中包的模式（tag/untag）
 
@@ -466,7 +470,7 @@ vlan set vlan-conversion egress entry 512 key port 0 state enable
 vlan set vlan-conversion ingress entry 0 key port 0 state enable
 vlan set vlan-conversion ingress entry 0 key inner vid 200 state enable 
 vlan set vlan-conversion ingress entry 0 key inner tag-status all
-vlan set vlan-conversion ingress entry 0 key outer tag-status all
+//vlan set vlan-conversion ingress entry 0 key outer tag-status all
 vlan set vlan-conversion ingress entry 0 key inner priority 7 state disable
 vlan set vlan-conversion ingress entry 0 data status inner non
 vlan set vlan-conversion ingress entry 0 data status outer non
@@ -517,7 +521,7 @@ vlan set vlan-conversion ingress entry 0 key outer priority <UINT:priority> stat
 vlan set vlan-conversion ingress entry 0 key port <UINT:port> state disable
 ```
 
-## L2
+### L2
 
 
 
@@ -525,7 +529,7 @@ vlan set vlan-conversion ingress entry 0 key port <UINT:port> state disable
 
 
 
-## L3
+### L3
 
 
 
@@ -533,7 +537,7 @@ vlan set vlan-conversion ingress entry 0 key port <UINT:port> state disable
 
 
 
-## ACL
+### ACL
 
 
 
@@ -543,7 +547,7 @@ vlan set vlan-conversion ingress entry 0 key port <UINT:port> state disable
 
 
 
-## Qos
+### Qos
 
 
 
@@ -621,8 +625,6 @@ l3 set ip6uc routing state enable
 vlan set profile entry 0 ipuc routing state enable
 
 l3-interface ipv4 A.B.C.D A.B.C.D:
-
-
 
 ```
 
